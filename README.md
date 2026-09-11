@@ -57,6 +57,8 @@ The first endpoints are:
 - `POST /api/v1/proofs/prepare`
 - `POST /api/v1/proofs/prepare-from-manifest`
 - `POST /api/v1/transactions/prepare-publication`
+- `POST /api/v1/transactions/verify-signed-publication`
+- `POST /api/v1/transactions/broadcast-publication`
 - `GET /api/v1/transactions/{transaction-or-full-hash}`
 
 The manifest proof endpoint validates and canonicalizes an ArkCast publication
@@ -70,6 +72,12 @@ public key, zero amount, fee ceiling, deadline, and permanent binary message
 before returning them for local wallet signing. It never signs or broadcasts.
 The transaction lookup endpoint returns allowlisted confirmation observations
 from configured nodes and reports disagreement as `inconsistent`.
+
+Signed publication bytes are accepted only with their expected transaction ID,
+full hash, manifest, account, and public key. Verification and broadcasting are
+separate calls. Before broadcasting, the gateway reparses and verifies the
+signature and every publication field, then checks the chain for the full hash.
+Already-known transactions return their existing state without rebroadcasting.
 
 ## Project status
 

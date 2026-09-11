@@ -4,9 +4,11 @@ import test from 'node:test'
 import { canonicalizeProof, encodeOnChainProof, preparePublicationProof } from '../src/proof.mjs'
 import { createGatewayServer, loadConfig, prepareProofFromManifest, probeNode } from '../src/server.mjs'
 import {
+  broadcastSignedPublicationTransaction,
   monitorTransaction,
   prepareUnsignedPublicationTransaction,
-  rejectSigningMaterial
+  rejectSigningMaterial,
+  verifySignedPublicationTransaction
 } from '../src/transactions.mjs'
 
 const hashA = 'a'.repeat(64)
@@ -214,4 +216,102 @@ test('transaction monitor distinguishes node failure from a missing transaction'
   const missing = await monitorTransaction('6590125187590132918', config,
     async () => ({ ok: true, json: async () => ({ errorCode: 5, errorDescription: 'Unknown transaction' }) }))
   assert.equal(missing.status, 'not_found')
+})
+
+function signedPublicationFixture() {
+  const proofResult = prepareProofFromManifest({
+    manifest: {
+      source: { instanceId: 'node2-evaluation', videoId: 'video-1' },
+      channelId: 'channel-1', durationSeconds: 55,
+      assets: [{ kind: 'source', mimeType: 'video/mp4', sizeBytes: 100, sha256: hashA }]
+    }
+  })
+  const input = {
+    manifest: proofResult.manifest,
+    publicKey: '1'.repeat(64),
+    account: 'ARK-73PZ-GB9A-5BP7-22UZU',
+    deadline: 60,
+    transactionBytes: 'cd'.repeat(253),
+    expectedTransaction: '6590125187590132918',
+    expectedFullHash: hashB
+  }
+  const parsed = {
+    verify: true,
+    transaction: input.expectedTransaction,
+    fullHash: input.expectedFullHash,
+    senderPublicKey: input.publicKey,
+    senderRS: input.account,
+    recipientRS: input.account,
+    amountNQT: '0',
+    feeNQT: '300000000',
+    deadline: 60,
+    attachment: {
+      'version.Message': 1,
+      messageIsText: false,
+      message: proofResult.onChainMessage.value
+    }
+  }
+  const config = {
+    nodeUrls: ['https://node.example'], timeoutMs: 50, maxFeeNQT: '300000000'
+  }
+  return { input, proofResult, parsed, config }
+}
+
+test('signed publication verification binds the signature to the approved proof', async () => {
+  const { input, proofResult, parsed, config } = signedPublicationFixture()
+  const result = await verifySignedPublicationTransaction(input, proofResult, config,
+    async (_url, options) => {
+      assert.equal(new URLSearchParams(options.body).get('requestType'), 'parseTransaction')
+      return { ok: true, json: async () => parsed }
+    })
+  assert.equal(result.verified, true)
+  assert.equal(result.transaction, input.expectedTransaction)
+  assert.equal(result.fullHash, input.expectedFullHash)
+  assert.equal('transactionBytes' in result, false)
+})
+
+test('signed publication verification rejects an unexpected full hash', async () => {
+  const { input, proofResult, parsed, config } = signedPublicationFixture()
+  await assert.rejects(() => verifySignedPublicationTransaction(input, proofResult, config,
+    async () => ({ ok: true, json: async () => ({ ...parsed, fullHash: hashA }) })),
+  /identity or signature/)
+})
+
+test('broadcast is chain-idempotent when the signed transaction is already known', async () => {
+  const { input, proofResult, parsed, config } = signedPublicationFixture()
+  const requests = []
+  const result = await broadcastSignedPublicationTransaction(input, proofResult, config,
+    async (_url, options) => {
+      const type = new URLSearchParams(options.body).get('requestType')
+      requests.push(type)
+      if (type === 'parseTransaction') return { ok: true, json: async () => parsed }
+      if (type === 'getTransaction') return { ok: true, json: async () => ({
+        transaction: input.expectedTransaction, fullHash: input.expectedFullHash
+      }) }
+      throw new Error('broadcast must not be called')
+    })
+  assert.equal(result.alreadyKnown, true)
+  assert.equal(result.broadcasted, false)
+  assert.deepEqual(requests, ['parseTransaction', 'getTransaction'])
+})
+
+test('broadcast submits only a verified and previously unknown publication transaction', async () => {
+  const { input, proofResult, parsed, config } = signedPublicationFixture()
+  const requests = []
+  const result = await broadcastSignedPublicationTransaction(input, proofResult, config,
+    async (_url, options) => {
+      const type = new URLSearchParams(options.body).get('requestType')
+      requests.push(type)
+      if (type === 'parseTransaction') return { ok: true, json: async () => parsed }
+      if (type === 'getTransaction') {
+        return { ok: true, json: async () => ({ errorCode: 5, errorDescription: 'Unknown transaction' }) }
+      }
+      return { ok: true, json: async () => ({
+        transaction: input.expectedTransaction, fullHash: input.expectedFullHash
+      }) }
+    })
+  assert.equal(result.status, 'accepted')
+  assert.equal(result.broadcasted, true)
+  assert.equal(result.alreadyKnown, false)
+  assert.deepEqual(requests, ['parseTransaction', 'getTransaction', 'broadcastTransaction'])
 })
