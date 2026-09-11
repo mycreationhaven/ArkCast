@@ -6,7 +6,7 @@ services:
       context: ../..
       dockerfile: services/arkovia-gateway/Dockerfile
       args:
-        NODE_IMAGE: ${ARKCAST_NODE_IMAGE:-node:22.19.0-alpine3.22}
+        NODE_IMAGE: ${ARKCAST_NODE_IMAGE:-node:22.19.0-alpine3.22@sha256:d2166de198f26e17e5a442f537754dd616ab069c47cc57b889310a717e0abbf9}
     image: arkcast/arkovia-gateway:phase-0
     network_mode: host
     environment:
@@ -28,4 +28,3 @@ services:
     mem_limit: 256m
     cpus: 0.50
     restart: unless-stopped
-

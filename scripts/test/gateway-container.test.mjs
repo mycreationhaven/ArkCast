@@ -7,7 +7,10 @@ const composeUrl = new URL('../../deploy/arkovia-gateway/compose.yaml', import.m
 
 test('gateway image uses a pinned Node 22 runtime and unprivileged user', async () => {
   const dockerfile = await readFile(dockerfileUrl, 'utf8')
-  assert.match(dockerfile, /node:22\.19\.0-alpine3\.22/)
+  assert.match(
+    dockerfile,
+    /node:22\.19\.0-alpine3\.22@sha256:[a-f0-9]{64}/
+  )
   assert.match(dockerfile, /^USER node$/m)
   assert.match(dockerfile, /^HEALTHCHECK /m)
 })
