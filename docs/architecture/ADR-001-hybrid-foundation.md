@@ -23,6 +23,7 @@ LBRY is a reference implementation and possible source of individually reviewed 
 - A deletion-capable replication control plane is required; decentralization does not make prohibited material immortal.
 - PeerTube modifications and network deployment must comply with AGPL-3.0 obligations.
 - Arkovia consensus changes are out of scope until the existing repository and protocol are fully audited.
+- The current Arkovia baseline fee is 1 ARKOS. The desired 0.01 ARKOS minimum requires separately reviewed consensus work and must not be assumed by ArkCast.
 
 ## Why not a direct fork first?
 
