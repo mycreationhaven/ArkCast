@@ -1,6 +1,6 @@
 import http from 'node:http'
 import { pathToFileURL } from 'node:url'
-import { canonicalizeProof, preparePublicationProof } from './proof.mjs'
+import { canonicalizeProof, encodeOnChainProof, preparePublicationProof } from './proof.mjs'
 
 const DEFAULT_TIMEOUT_MS = 3000
 const MAX_BODY_BYTES = 16 * 1024
@@ -109,7 +109,8 @@ export function createHandler(config, fetchImpl = fetch) {
         return sendJson(response, 200, {
           proof,
           canonicalPayload: canonicalizeProof(proof),
-          signing: 'Sign this exact payload in a user-controlled Arkovia wallet.'
+          onChainMessage: encodeOnChainProof(proof),
+          signing: 'Build and sign the containing Arkovia transaction in a user-controlled wallet.'
         })
       } catch (error) {
         return sendJson(response, error instanceof RangeError ? 413 : 400, {
