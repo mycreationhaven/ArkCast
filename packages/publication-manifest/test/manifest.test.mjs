@@ -39,6 +39,13 @@ test('changing an asset changes the publication hash', () => {
   assert.notEqual(hashPublicationManifest(original), hashPublicationManifest(changed))
 })
 
+test('manifest records PeerTube segment integrity metadata', () => {
+  const manifest = buildPublicationManifest(input([
+    { kind: 'integrity-manifest', mimeType: 'application/json', sizeBytes: 666, sha256: hashA }
+  ]))
+  assert.equal(manifest.assets[0].kind, 'integrity-manifest')
+})
+
 test('manifest rejects unsafe or incomplete assets', () => {
   assert.throws(() => buildPublicationManifest(input([
     { kind: 'remote-url', mimeType: 'video/mp4', sizeBytes: 200, sha256: hashA }
