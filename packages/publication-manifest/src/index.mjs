@@ -18,7 +18,7 @@ function integer(value, field, minimum = 0) {
 function asset(value, index) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`Invalid assets[${index}]`)
   return {
-    kind: string(value.kind, /^(source|hls-playlist|hls-segment|web-video|thumbnail|preview)$/, `assets[${index}].kind`),
+    kind: string(value.kind, /^(source|hls-playlist|hls-segment|integrity-manifest|web-video|thumbnail|preview)$/, `assets[${index}].kind`),
     mimeType: string(value.mimeType, MIME, `assets[${index}].mimeType`).toLowerCase(),
     sizeBytes: integer(value.sizeBytes, `assets[${index}].sizeBytes`, 1),
     sha256: string(value.sha256, HASH, `assets[${index}].sha256`),
