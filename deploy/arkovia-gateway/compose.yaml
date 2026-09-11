@@ -1,0 +1,31 @@
+name: arkcast-arkovia-gateway
+
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: services/arkovia-gateway/Dockerfile
+      args:
+        NODE_IMAGE: ${ARKCAST_NODE_IMAGE:-node:22.19.0-alpine3.22}
+    image: arkcast/arkovia-gateway:phase-0
+    network_mode: host
+    environment:
+      NODE_ENV: production
+      ARKOVIA_NODE_URLS: http://127.0.0.1:4876
+      ARKOVIA_HEALTH_PATH: /nxt?requestType=getBlockchainStatus
+      ARKOVIA_REQUEST_TIMEOUT_MS: ${ARKOVIA_REQUEST_TIMEOUT_MS:-3000}
+      ARKCAST_GATEWAY_HOST: 127.0.0.1
+      ARKCAST_GATEWAY_PORT: ${ARKCAST_GATEWAY_PORT:-8787}
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 100
+    mem_limit: 256m
+    cpus: 0.50
+    restart: unless-stopped
+
