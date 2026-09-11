@@ -1,6 +1,9 @@
 const HASH_PATTERN = /^[a-f0-9]{64}$/
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 const LICENSE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._:+/-]{0,63}$/
+const MAGIC = Buffer.from('AKVP', 'ascii')
+const FORMAT_VERSION = 1
+const HASH_SHA256 = 1
 
 function requireMatch(value, pattern, field) {
   if (typeof value !== 'string' || !pattern.test(value)) {
@@ -28,9 +31,34 @@ export function preparePublicationProof(input) {
   if (input.parentProofId !== undefined) {
     proof.parentProofId = requireMatch(input.parentProofId, ID_PATTERN, 'parentProofId')
   }
+  if (input.parentProofHash !== undefined) {
+    proof.parentProofHash = requireMatch(input.parentProofHash, HASH_PATTERN, 'parentProofHash')
+  }
   return proof
 }
 
 export function canonicalizeProof(proof) {
   return JSON.stringify(proof)
+}
+
+export function encodeOnChainProof(proof) {
+  const hasParent = proof.parentProofHash !== undefined
+  const header = Buffer.from([FORMAT_VERSION, HASH_SHA256, hasParent ? 1 : 0, 0])
+  const parts = [
+    MAGIC,
+    header,
+    Buffer.from(proof.mediaSha256, 'hex'),
+    Buffer.from(proof.metadataSha256, 'hex')
+  ]
+  if (hasParent) parts.push(Buffer.from(proof.parentProofHash, 'hex'))
+
+  const payload = Buffer.concat(parts)
+  if (payload.length > 160) throw new RangeError('On-chain proof exceeds Arkovia message limit')
+  return {
+    encoding: 'hex',
+    messageIsText: false,
+    messageIsPrunable: false,
+    bytes: payload.length,
+    value: payload.toString('hex')
+  }
 }
