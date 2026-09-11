@@ -24,12 +24,12 @@ bound to `127.0.0.1:9000`; this was not a public production deployment.
 ## Arkovia proof
 
 - Network: Arkovia mainnet
-- Node-lijst itemTransaction ID: `6590125187590132918`
+- Transaction ID: `6590125187590132918`
 - Full hash: `b614aa2ff1d3745b334dc7a88a340f284532730ff6559765f18dad5906787257`
 - Block ID: `8389024868894587491`
 - Observed block height: `20564`
 - Observed confirmations: `3`
-- Sender and recipient:-lijst item `ARK-73PZ-GB9A-5BP7-22UZU`
+- Sender and recipient: `ARK-73PZ-GB9A-5BP7-22UZU`
 - Amount: `0 NQT`
 - Fee: `300000000 NQT`
 - Message encoding: binary hexadecimal
