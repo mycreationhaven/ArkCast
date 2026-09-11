@@ -3,6 +3,11 @@ import { once } from 'node:events'
 import test from 'node:test'
 import { canonicalizeProof, encodeOnChainProof, preparePublicationProof } from '../src/proof.mjs'
 import { createGatewayServer, loadConfig, prepareProofFromManifest, probeNode } from '../src/server.mjs'
+import {
+  monitorTransaction,
+  prepareUnsignedPublicationTransaction,
+  rejectSigningMaterial
+} from '../src/transactions.mjs'
 
 const hashA = 'a'.repeat(64)
 const hashB = 'b'.repeat(64)
@@ -46,7 +51,7 @@ test('node probe exposes only selected non-sensitive status fields', async () =>
   assert.equal('secret' in result, false)
 })
 
-test('gateway prepares a proof without copying signing material', async t => {
+test('gateway rejects signing material instead of accepting or copying it', async t => {
   const config = loadConfig({
     ARKOVIA_NODE_URLS: 'https://node.example',
     ARKCAST_GATEWAY_HOST: '127.0.0.1',
@@ -67,10 +72,9 @@ test('gateway prepares a proof without copying signing material', async t => {
       seedPhrase: 'must never be echoed'
     })
   })
-  assert.equal(response.status, 200)
+  assert.equal(response.status, 400)
   const body = await response.json()
-  assert.equal('seedPhrase' in body.proof, false)
-  assert.equal(body.canonicalPayload.includes('must never be echoed'), false)
+  assert.match(body.error, /signing material is forbidden/)
 })
 
 
@@ -103,4 +107,111 @@ test('manifest proof requires exactly one source asset', () => {
       ]
     }
   }), /exactly one source asset/)
+})
+
+test('signing material detection is recursive and case insensitive', () => {
+  assert.throws(() => rejectSigningMaterial({ wallet: { secret_phrase: 'never' } }),
+    /signing material is forbidden/)
+})
+
+test('gateway prepares and reparses an unsigned publication transaction', async () => {
+  const proofResult = prepareProofFromManifest({
+    manifest: {
+      source: { instanceId: 'node2-evaluation', videoId: 'video-1' },
+      channelId: 'channel-1', durationSeconds: 55,
+      assets: [{ kind: 'source', mimeType: 'video/mp4', sizeBytes: 100, sha256: hashA }]
+    }
+  })
+  const publicKey = '1'.repeat(64)
+  const account = 'ARK-73PZ-GB9A-5BP7-22UZU'
+  const transaction = {
+    senderPublicKey: publicKey, senderRS: account, recipientRS: account,
+    amountNQT: '0', feeNQT: '300000000', deadline: 60,
+    attachment: {
+      'version.Message': 1, messageIsText: false,
+      message: proofResult.onChainMessage.value
+    }
+  }
+  let calls = 0
+  const fetchImpl = async (_url, options) => {
+    calls += 1
+    const request = new URLSearchParams(options.body)
+    if (calls === 1) {
+      assert.equal(request.get('requestType'), 'sendMessage')
+      assert.equal(request.get('broadcast'), 'false')
+      assert.equal(request.get('messageIsPrunable'), 'false')
+      return { ok: true, json: async () => ({ unsignedTransactionBytes: 'ab'.repeat(253), transactionJSON: transaction }) }
+    }
+    assert.equal(request.get('requestType'), 'parseTransaction')
+    return { ok: true, json: async () => ({ ...transaction, verify: false }) }
+  }
+  const result = await prepareUnsignedPublicationTransaction(
+    { publicKey, account, manifest: proofResult.manifest }, proofResult,
+    { nodeUrls: ['https://node.example'], timeoutMs: 50, maxFeeNQT: '300000000' }, fetchImpl)
+  assert.equal(result.transaction.feeNQT, '300000000')
+  assert.equal(result.unsignedTransactionBytes.length, 506)
+  assert.equal(calls, 2)
+})
+
+test('unsigned transaction preparation rejects a fee above the configured ceiling', async () => {
+  const proofResult = prepareProofFromManifest({
+    manifest: {
+      source: { instanceId: 'node2-evaluation', videoId: 'video-1' },
+      channelId: 'channel-1', durationSeconds: 55,
+      assets: [{ kind: 'source', mimeType: 'video/mp4', sizeBytes: 100, sha256: hashA }]
+    }
+  })
+  const publicKey = '1'.repeat(64)
+  const account = 'ARK-73PZ-GB9A-5BP7-22UZU'
+  const fetchImpl = async () => ({ ok: true, json: async () => ({
+    unsignedTransactionBytes: 'ab',
+    transactionJSON: {
+      senderPublicKey: publicKey, senderRS: account, recipientRS: account,
+      amountNQT: '0', feeNQT: '300000001', deadline: 60,
+      attachment: { 'version.Message': 1, messageIsText: false, message: proofResult.onChainMessage.value }
+    }
+  }) })
+  await assert.rejects(() => prepareUnsignedPublicationTransaction(
+    { publicKey, account }, proofResult,
+    { nodeUrls: ['https://node.example'], timeoutMs: 50, maxFeeNQT: '300000000' }, fetchImpl),
+  /fee exceeds/)
+})
+
+test('transaction monitor reports the minimum agreed confirmation count', async () => {
+  const responses = new Map([
+    ['https://node-a.example', 7], ['https://node-b.example', 5]
+  ])
+  const result = await monitorTransaction('6590125187590132918', {
+    nodeUrls: [...responses.keys()], timeoutMs: 50
+  }, async url => ({ ok: true, json: async () => ({
+    transaction: '6590125187590132918', fullHash: hashA,
+    block: '8389024868894587491', height: 20564,
+    confirmations: responses.get(url.origin), senderRS: 'ARK-SENDER',
+    recipientRS: 'ARK-RECIPIENT', amountNQT: '0', feeNQT: '300000000'
+  }) }))
+  assert.equal(result.status, 'confirmed')
+  assert.equal(result.confirmations, 5)
+  assert.equal(result.observedNodes, 2)
+})
+
+test('transaction monitor surfaces disagreement between trusted nodes', async () => {
+  let calls = 0
+  const result = await monitorTransaction('6590125187590132918', {
+    nodeUrls: ['https://node-a.example', 'https://node-b.example'], timeoutMs: 50
+  }, async () => ({ ok: true, json: async () => ({
+    transaction: '6590125187590132918', fullHash: hashA,
+    block: String(++calls), confirmations: 1
+  }) }))
+  assert.equal(result.status, 'inconsistent')
+})
+
+test('transaction monitor distinguishes node failure from a missing transaction', async () => {
+  const config = { nodeUrls: ['https://node.example'], timeoutMs: 50 }
+  const unavailable = await monitorTransaction('6590125187590132918', config,
+    async () => { throw new Error('connection refused') })
+  assert.equal(unavailable.status, 'unavailable')
+
+  const missing = await monitorTransaction('6590125187590132918', config,
+    async () => ({ ok: true, json: async () => ({ errorCode: 5, errorDescription: 'Unknown transaction' }) }))
+  assert.equal(missing.status, 'not_found')
 })
