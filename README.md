@@ -25,6 +25,8 @@ services/
   peertube-adapter/   Narrow PeerTube REST API boundary
 packages/
   publication-manifest/  Deterministic off-chain media inventory and hashing
+deploy/
+  peertube-evaluation/   Local-only, secret-free deployment template
 ```
 
 ## Run the gateway
@@ -39,6 +41,8 @@ npm start
 ```
 
 Run each package's tests from its own directory. The repository currently uses only Node.js built-ins and requires no dependency installation.
+
+The first PeerTube origin is governed by `docs/peertube-evaluation-runbook.md`. The committed template refuses moving PeerTube tags and requires an operator-verified image digest.
 
 The first endpoints are:
 
