@@ -22,10 +22,10 @@ Prove that ArkCast can publish, verify, pay, replicate, and survive an ordinary 
 
 ### 0.3 Video origin
 
-- Deploy a private PeerTube evaluation node.
+- Deploy a private PeerTube `v8.2.4` evaluation node, then pin its immutable image digest.
 - Upload and transcode one non-sensitive test video.
 - Record exact PeerTube, FFmpeg, database, and object-storage versions.
-- Generate a deterministic hash from the finalized publication manifest.
+- Generate a deterministic SHA-256 hash from the finalized ArkCast publication manifest.
 
 ### 0.4 Proof and tip
 
