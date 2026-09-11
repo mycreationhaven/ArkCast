@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import test from 'node:test'
-import { canonicalizeProof, preparePublicationProof } from '../src/proof.mjs'
+import { canonicalizeProof, encodeOnChainProof, preparePublicationProof } from '../src/proof.mjs'
 import { createGatewayServer, loadConfig, probeNode } from '../src/server.mjs'
 
 const hashA = 'a'.repeat(64)
@@ -21,6 +21,19 @@ test('publication proof rejects malformed hashes', () => {
     channelId: 'channel-1', videoId: 'video-1',
     mediaSha256: 'not-a-hash', metadataSha256: hashB
   }), /Invalid mediaSha256/)
+})
+
+test('on-chain proof is permanent and fits the 160-byte Arkovia message limit', () => {
+  const proof = preparePublicationProof({
+    channelId: 'channel-1', videoId: 'video-1',
+    mediaSha256: hashA, metadataSha256: hashB,
+    parentProofHash: 'c'.repeat(64)
+  })
+  const encoded = encodeOnChainProof(proof)
+  assert.equal(encoded.messageIsPrunable, false)
+  assert.equal(encoded.messageIsText, false)
+  assert.equal(encoded.bytes, 104)
+  assert.equal(Buffer.from(encoded.value, 'hex').subarray(0, 4).toString('ascii'), 'AKVP')
 })
 
 test('node probe exposes only selected non-sensitive status fields', async () => {
