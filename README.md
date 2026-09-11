@@ -22,6 +22,9 @@ docs/
   security.md         Non-negotiable security boundaries
 services/
   arkovia-gateway/    Initial blockchain integration boundary
+  peertube-adapter/   Narrow PeerTube REST API boundary
+packages/
+  publication-manifest/  Deterministic off-chain media inventory and hashing
 ```
 
 ## Run the gateway
@@ -34,6 +37,8 @@ cp .env.example .env
 npm test
 npm start
 ```
+
+Run each package's tests from its own directory. The repository currently uses only Node.js built-ins and requires no dependency installation.
 
 The first endpoints are:
 
