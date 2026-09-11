@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import test from 'node:test'
 import { canonicalizeProof, encodeOnChainProof, preparePublicationProof } from '../src/proof.mjs'
-import { createGatewayServer, loadConfig, probeNode } from '../src/server.mjs'
+import { createGatewayServer, loadConfig, prepareProofFromManifest, probeNode } from '../src/server.mjs'
 
 const hashA = 'a'.repeat(64)
 const hashB = 'b'.repeat(64)
@@ -71,4 +71,36 @@ test('gateway prepares a proof without copying signing material', async t => {
   const body = await response.json()
   assert.equal('seedPhrase' in body.proof, false)
   assert.equal(body.canonicalPayload.includes('must never be echoed'), false)
+})
+
+
+test('gateway derives a proof from a validated publication manifest', () => {
+  const result = prepareProofFromManifest({
+    manifest: {
+      source: { instanceId: 'node2-evaluation', videoId: 'video-1' },
+      channelId: 'channel-1',
+      durationSeconds: 55,
+      assets: [
+        { kind: 'web-video', mimeType: 'video/mp4', resolution: 1440, sizeBytes: 200, sha256: hashB },
+        { kind: 'source', mimeType: 'video/mp4', sizeBytes: 100, sha256: hashA }
+      ]
+    }
+  })
+  assert.equal(result.proof.mediaSha256, hashA)
+  assert.equal(result.proof.metadataSha256, result.manifestSha256)
+  assert.equal(result.onChainMessage.bytes, 72)
+  assert.equal(result.manifest.source.provider, 'peertube')
+})
+
+test('manifest proof requires exactly one source asset', () => {
+  assert.throws(() => prepareProofFromManifest({
+    manifest: {
+      source: { instanceId: 'node2-evaluation', videoId: 'video-1' },
+      channelId: 'channel-1',
+      durationSeconds: 55,
+      assets: [
+        { kind: 'web-video', mimeType: 'video/mp4', sizeBytes: 200, sha256: hashB }
+      ]
+    }
+  }), /exactly one source asset/)
 })
