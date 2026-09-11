@@ -6,6 +6,11 @@ import {
   hashPublicationManifest
 } from '../../../packages/publication-manifest/src/index.mjs'
 import { canonicalizeProof, encodeOnChainProof, preparePublicationProof } from './proof.mjs'
+import {
+  monitorTransaction,
+  prepareUnsignedPublicationTransaction,
+  rejectSigningMaterial
+} from './transactions.mjs'
 
 const DEFAULT_TIMEOUT_MS = 3000
 const MAX_BODY_BYTES = 2 * 1024 * 1024
@@ -30,7 +35,8 @@ export function loadConfig(env = process.env) {
     healthPath: env.ARKOVIA_HEALTH_PATH || '/nxt?requestType=getBlockchainStatus',
     timeoutMs: Number.parseInt(env.ARKOVIA_REQUEST_TIMEOUT_MS || `${DEFAULT_TIMEOUT_MS}`, 10),
     host: env.ARKCAST_GATEWAY_HOST || '127.0.0.1',
-    port: Number.parseInt(env.ARKCAST_GATEWAY_PORT || '8787', 10)
+    port: Number.parseInt(env.ARKCAST_GATEWAY_PORT || '8787', 10),
+    maxFeeNQT: env.ARKOVIA_MAX_PUBLICATION_FEE_NQT || '300000000'
   }
 }
 
@@ -137,7 +143,9 @@ export function createHandler(config, fetchImpl = fetch) {
         return sendJson(response, 415, { error: 'Content-Type must be application/json' })
       }
       try {
-        const proof = preparePublicationProof(await readJson(request))
+        const input = await readJson(request)
+        rejectSigningMaterial(input)
+        const proof = preparePublicationProof(input)
         return sendJson(response, 200, {
           proof,
           canonicalPayload: canonicalizeProof(proof),
@@ -156,8 +164,10 @@ export function createHandler(config, fetchImpl = fetch) {
         return sendJson(response, 415, { error: 'Content-Type must be application/json' })
       }
       try {
+        const input = await readJson(request)
+        rejectSigningMaterial(input)
         return sendJson(response, 200, {
-          ...prepareProofFromManifest(await readJson(request)),
+          ...prepareProofFromManifest(input),
           signing: 'Build and sign the containing Arkovia transaction in a user-controlled wallet.'
         })
       } catch (error) {
@@ -165,6 +175,29 @@ export function createHandler(config, fetchImpl = fetch) {
           error: error instanceof Error ? error.message : 'Invalid request'
         })
       }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/v1/transactions/prepare-publication') {
+      if (!request.headers['content-type']?.toLowerCase().startsWith('application/json')) {
+        return sendJson(response, 415, { error: 'Content-Type must be application/json' })
+      }
+      try {
+        const input = await readJson(request)
+        rejectSigningMaterial(input)
+        const proofResult = prepareProofFromManifest(input)
+        return sendJson(response, 200,
+          await prepareUnsignedPublicationTransaction(input, proofResult, config, fetchImpl))
+      } catch (error) {
+        return sendJson(response, error instanceof RangeError ? 422 : 400, {
+          error: error instanceof Error ? error.message : 'Invalid request'
+        })
+      }
+    }
+
+    const transactionMatch = url.pathname.match(/^\/api\/v1\/transactions\/([a-f0-9]{64}|[0-9]{1,20})$/)
+    if (request.method === 'GET' && transactionMatch) {
+      const result = await monitorTransaction(transactionMatch[1], config, fetchImpl)
+      return sendJson(response, result.status === 'not_found' ? 404 : 200, result)
     }
 
     return sendJson(response, 404, { error: 'Not found' })

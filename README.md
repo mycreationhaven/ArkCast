@@ -56,11 +56,20 @@ The first endpoints are:
 - `GET /api/v1/blockchain/health`
 - `POST /api/v1/proofs/prepare`
 - `POST /api/v1/proofs/prepare-from-manifest`
+- `POST /api/v1/transactions/prepare-publication`
+- `GET /api/v1/transactions/{transaction-or-full-hash}`
 
 The manifest proof endpoint validates and canonicalizes an ArkCast publication
 manifest, selects its single source asset, hashes the manifest, and prepares the
 bounded on-chain message. Proof endpoints do not accept private keys, seed
 phrases, or passwords.
+
+The publication-transaction endpoint asks an operator-configured Arkovia node
+to construct unsigned bytes, parses those bytes again, and verifies the account,
+public key, zero amount, fee ceiling, deadline, and permanent binary message
+before returning them for local wallet signing. It never signs or broadcasts.
+The transaction lookup endpoint returns allowlisted confirmation observations
+from configured nodes and reports disagreement as `inconsistent`.
 
 ## Project status
 
