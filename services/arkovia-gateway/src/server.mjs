@@ -1,9 +1,14 @@
 import http from 'node:http'
 import { pathToFileURL } from 'node:url'
+import {
+  buildPublicationManifest,
+  canonicalizeManifest,
+  hashPublicationManifest
+} from '../../../packages/publication-manifest/src/index.mjs'
 import { canonicalizeProof, encodeOnChainProof, preparePublicationProof } from './proof.mjs'
 
 const DEFAULT_TIMEOUT_MS = 3000
-const MAX_BODY_BYTES = 16 * 1024
+const MAX_BODY_BYTES = 2 * 1024 * 1024
 
 export function loadConfig(env = process.env) {
   const rawUrls = (env.ARKOVIA_NODE_URLS || 'http://127.0.0.1:27876')
@@ -79,6 +84,33 @@ async function readJson(request) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
+export function prepareProofFromManifest(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new TypeError('Request input must be an object')
+  }
+  const manifest = buildPublicationManifest(input.manifest)
+  const sourceAssets = manifest.assets.filter(asset => asset.kind === 'source')
+  if (sourceAssets.length !== 1) {
+    throw new TypeError('Manifest must contain exactly one source asset')
+  }
+  const manifestSha256 = hashPublicationManifest(manifest)
+  const proof = preparePublicationProof({
+    channelId: manifest.channelId,
+    videoId: manifest.source.videoId,
+    mediaSha256: sourceAssets[0].sha256,
+    metadataSha256: manifestSha256,
+    ...(input.license === undefined ? {} : { license: input.license })
+  })
+  return {
+    manifest,
+    canonicalManifest: canonicalizeManifest(manifest),
+    manifestSha256,
+    proof,
+    canonicalPayload: canonicalizeProof(proof),
+    onChainMessage: encodeOnChainProof(proof)
+  }
+}
+
 export function createHandler(config, fetchImpl = fetch) {
   return async function handler(request, response) {
     const url = new URL(request.url, 'http://gateway.local')
@@ -110,6 +142,22 @@ export function createHandler(config, fetchImpl = fetch) {
           proof,
           canonicalPayload: canonicalizeProof(proof),
           onChainMessage: encodeOnChainProof(proof),
+          signing: 'Build and sign the containing Arkovia transaction in a user-controlled wallet.'
+        })
+      } catch (error) {
+        return sendJson(response, error instanceof RangeError ? 413 : 400, {
+          error: error instanceof Error ? error.message : 'Invalid request'
+        })
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/v1/proofs/prepare-from-manifest') {
+      if (!request.headers['content-type']?.toLowerCase().startsWith('application/json')) {
+        return sendJson(response, 415, { error: 'Content-Type must be application/json' })
+      }
+      try {
+        return sendJson(response, 200, {
+          ...prepareProofFromManifest(await readJson(request)),
           signing: 'Build and sign the containing Arkovia transaction in a user-controlled wallet.'
         })
       } catch (error) {
