@@ -26,6 +26,7 @@ services/
 packages/
   publication-manifest/  Deterministic off-chain media inventory and hashing
 deploy/
+  arkovia-gateway/      Local-only hardened gateway container
   peertube-evaluation/   Local-only, secret-free deployment template
 ```
 
@@ -41,6 +42,11 @@ npm start
 ```
 
 Run each package's tests from its own directory. The repository currently uses only Node.js built-ins and requires no dependency installation.
+
+For the Linux evaluation host, follow `docs/arkovia-gateway-container-runbook.md`
+to build the Node.js 22 gateway container and connect it to the local ARKOS API
+at `127.0.0.1:4876`. The committed deployment keeps both endpoints on loopback
+and contains no wallet signing material.
 
 The first PeerTube origin is governed by `docs/peertube-evaluation-runbook.md`. The committed template refuses moving PeerTube tags and requires an operator-verified image digest.
 
