@@ -7,9 +7,11 @@ import {
 } from '../../../packages/publication-manifest/src/index.mjs'
 import { canonicalizeProof, encodeOnChainProof, preparePublicationProof } from './proof.mjs'
 import {
+  broadcastSignedPublicationTransaction,
   monitorTransaction,
   prepareUnsignedPublicationTransaction,
-  rejectSigningMaterial
+  rejectSigningMaterial,
+  verifySignedPublicationTransaction
 } from './transactions.mjs'
 
 const DEFAULT_TIMEOUT_MS = 3000
@@ -187,6 +189,40 @@ export function createHandler(config, fetchImpl = fetch) {
         const proofResult = prepareProofFromManifest(input)
         return sendJson(response, 200,
           await prepareUnsignedPublicationTransaction(input, proofResult, config, fetchImpl))
+      } catch (error) {
+        return sendJson(response, error instanceof RangeError ? 422 : 400, {
+          error: error instanceof Error ? error.message : 'Invalid request'
+        })
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/v1/transactions/verify-signed-publication') {
+      if (!request.headers['content-type']?.toLowerCase().startsWith('application/json')) {
+        return sendJson(response, 415, { error: 'Content-Type must be application/json' })
+      }
+      try {
+        const input = await readJson(request)
+        rejectSigningMaterial(input)
+        const proofResult = prepareProofFromManifest(input)
+        return sendJson(response, 200,
+          await verifySignedPublicationTransaction(input, proofResult, config, fetchImpl))
+      } catch (error) {
+        return sendJson(response, error instanceof RangeError ? 422 : 400, {
+          error: error instanceof Error ? error.message : 'Invalid request'
+        })
+      }
+    }
+
+    if (request.method === 'POST' && url.pathname === '/api/v1/transactions/broadcast-publication') {
+      if (!request.headers['content-type']?.toLowerCase().startsWith('application/json')) {
+        return sendJson(response, 415, { error: 'Content-Type must be application/json' })
+      }
+      try {
+        const input = await readJson(request)
+        rejectSigningMaterial(input)
+        const proofResult = prepareProofFromManifest(input)
+        return sendJson(response, 200,
+          await broadcastSignedPublicationTransaction(input, proofResult, config, fetchImpl))
       } catch (error) {
         return sendJson(response, error instanceof RangeError ? 422 : 400, {
           error: error instanceof Error ? error.message : 'Invalid request'

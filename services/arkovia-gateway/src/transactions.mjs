@@ -68,6 +68,126 @@ function validateTransaction(transaction, expected) {
   return feeNQT
 }
 
+function validateSignedInput(input, proofResult, config) {
+  rejectSigningMaterial(input)
+  const publicKey = requireMatch(input.publicKey, PUBLIC_KEY_PATTERN, 'publicKey')
+  const account = requireMatch(input.account, ACCOUNT_PATTERN, 'account')
+  const transactionBytes = requireMatch(input.transactionBytes, BYTE_PATTERN, 'transactionBytes')
+  if (transactionBytes.length % 2 !== 0 || transactionBytes.length > 4096) {
+    throw new TypeError('Invalid transactionBytes')
+  }
+  const expectedTransaction = requireMatch(
+    input.expectedTransaction, TRANSACTION_ID_PATTERN, 'expectedTransaction')
+  const expectedFullHash = requireMatch(
+    input.expectedFullHash, FULL_HASH_PATTERN, 'expectedFullHash')
+  const deadline = input.deadline === undefined ? 60 : input.deadline
+  if (!Number.isInteger(deadline) || deadline < 1 || deadline > 1440) {
+    throw new TypeError('Invalid deadline')
+  }
+  return {
+    publicKey,
+    account,
+    transactionBytes,
+    expectedTransaction,
+    expectedFullHash,
+    deadline,
+    message: proofResult.onChainMessage.value,
+    maxFeeNQT: requireNqt(config.maxFeeNQT, 'configured maximum fee')
+  }
+}
+
+export async function verifySignedPublicationTransaction(input, proofResult, config, fetchImpl = fetch) {
+  const expected = validateSignedInput(input, proofResult, config)
+  let lastError
+  for (const node of config.nodeUrls) {
+    try {
+      const parsed = await requestNode(node, {
+        requestType: 'parseTransaction', transactionBytes: expected.transactionBytes
+      }, config.timeoutMs, fetchImpl)
+      if (parsed.errorCode !== undefined) {
+        throw new Error(parsed.errorDescription || `Arkovia error ${parsed.errorCode}`)
+      }
+      const feeNQT = validateTransaction(parsed, expected)
+      if (parsed.verify !== true ||
+          parsed.transaction !== expected.expectedTransaction ||
+          parsed.fullHash !== expected.expectedFullHash) {
+        throw new Error('Signed transaction identity or signature validation failed')
+      }
+      return {
+        node,
+        transaction: parsed.transaction,
+        fullHash: parsed.fullHash,
+        signedBytes: expected.transactionBytes.length / 2,
+        verified: true,
+        senderPublicKey: expected.publicKey,
+        senderRS: expected.account,
+        recipientRS: expected.account,
+        amountNQT: '0',
+        feeNQT,
+        deadline: expected.deadline,
+        attachment: {
+          message: expected.message,
+          messageIsText: false,
+          messageIsPrunable: false
+        }
+      }
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError || new Error('No Arkovia nodes are configured')
+}
+
+export async function broadcastSignedPublicationTransaction(input, proofResult, config, fetchImpl = fetch) {
+  const verified = await verifySignedPublicationTransaction(input, proofResult, config, fetchImpl)
+  const known = await monitorTransaction(verified.fullHash, config, fetchImpl)
+  if (known.status === 'pending' || known.status === 'confirmed') {
+    return { status: known.status, alreadyKnown: true, broadcasted: false, verified, chain: known }
+  }
+  if (known.status === 'inconsistent') {
+    throw new Error('Trusted Arkovia nodes disagree about the transaction')
+  }
+
+  const orderedNodes = [verified.node, ...config.nodeUrls.filter(node => node !== verified.node)]
+  let lastError
+  for (const node of orderedNodes) {
+    try {
+      const result = await requestNode(node, {
+        requestType: 'broadcastTransaction', transactionBytes: input.transactionBytes
+      }, config.timeoutMs, fetchImpl)
+      if (result.errorCode !== undefined) {
+        throw new Error(result.errorDescription || `Arkovia error ${result.errorCode}`)
+      }
+      if (result.transaction !== verified.transaction || result.fullHash !== verified.fullHash) {
+        throw new Error('Arkovia node returned an unexpected broadcast identity')
+      }
+      return {
+        status: 'accepted',
+        alreadyKnown: false,
+        broadcasted: true,
+        node,
+        transaction: result.transaction,
+        fullHash: result.fullHash,
+        verified
+      }
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  const reconciled = await monitorTransaction(verified.fullHash, config, fetchImpl)
+  if (reconciled.status === 'pending' || reconciled.status === 'confirmed') {
+    return {
+      status: reconciled.status,
+      alreadyKnown: true,
+      broadcasted: false,
+      verified,
+      chain: reconciled
+    }
+  }
+  throw lastError || new Error('No Arkovia node accepted the transaction')
+}
+
 export async function prepareUnsignedPublicationTransaction(input, proofResult, config, fetchImpl = fetch) {
   rejectSigningMaterial(input)
   const publicKey = requireMatch(input.publicKey, PUBLIC_KEY_PATTERN, 'publicKey')
