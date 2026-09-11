@@ -49,8 +49,12 @@ The first endpoints are:
 - `GET /health`
 - `GET /api/v1/blockchain/health`
 - `POST /api/v1/proofs/prepare`
+- `POST /api/v1/proofs/prepare-from-manifest`
 
-The proof endpoint prepares a canonical payload for wallet-side signing. It does not accept private keys, seed phrases, or passwords.
+The manifest proof endpoint validates and canonicalizes an ArkCast publication
+manifest, selects its single source asset, hashes the manifest, and prepares the
+bounded on-chain message. Proof endpoints do not accept private keys, seed
+phrases, or passwords.
 
 ## Project status
 
